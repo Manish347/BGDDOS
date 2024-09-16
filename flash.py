@@ -225,7 +225,7 @@ def send_welcome(message):
     # Add buttons to the markup
     markup.add(btn2, btn6)
 
-    bot.send_message(message.chat.id, "*Choose an option AUR AGAR BUY NHI KIYA HAI TO BUY KAR AUR ADMIN KO BOL APPROVE KARNE KO ADMIN -: @FLASH_502:*", reply_markup=markup, parse_mode='Markdown')
+    bot.send_message(message.chat.id, "*Choose an option AUR AGAR BUY NHI KIYA HAI TO BUY KAR AUR ADMIN KO BOL APPROVE KARNE KO ADMIN -: @Richyst:*", reply_markup=markup, parse_mode='Markdown')
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
@@ -252,9 +252,9 @@ def handle_message(message):
             response = "*No account information found. Please contact the administrator.*"
         bot.reply_to(message, response, parse_mode='Markdown')
     elif message.text == "Help❓":
-        bot.reply_to(message, "*Help selected @rasharking*", parse_mode='Markdown')
+        bot.reply_to(message, "*Help selected @richyst*", parse_mode='Markdown')
     elif message.text == "Contact admin✔️":
-        bot.reply_to(message, "*Contact admin selected ADMIN -: @rasharking / @FLASH_502 *", parse_mode='Markdown')
+        bot.reply_to(message, "*Contact admin selected ADMIN -: @richyst / @Mostbet_India_suppt *", parse_mode='Markdown')
     else:
         bot.reply_to(message, "*Invalid option*", parse_mode='Markdown')
 

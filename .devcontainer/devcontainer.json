@@ -1,21 +1,15 @@
 {
-    "name": "My Codespace",
-    "image": "mcr.microsoft.com/vscode/devcontainers/python:3.8",
-    "features": {
-        "ghcr.io/devcontainers/features/sshd:1": {
-            "version": "latest"
-        }
-    },
-    "postStartCommand": "python3 /workspaces/flash/flash.py",
-    "customizations": {
-        "vscode": {
-            "settings": {
-                "python.pythonPath": "/usr/local/bin/python"
-            },
-            "extensions": [
-                "ms-python.python"
-            ]
-        }
+  "name": "BGDDOS",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "postStartCommand": "cd /workspaces/BGDDOS && python3 -m venv .venv && . .venv/bin/activate && python -m pip install --upgrade pip && pip install pyTelegramBotAPI requests aiohttp certifi",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/workspaces/BGDDOS/.venv/bin/python"
+      },
+      "extensions": [
+        "ms-python.python"
+      ]
     }
+  }
 }
-

@@ -9,7 +9,7 @@ cat <<EOL > .devcontainer/devcontainer.json
       "version": "latest"
     }
   },
-  "postStartCommand": "cd /workspaces/BGDDOS && python3 -m venv .venv && . .venv/bin/activate && python -m pip install --upgrade pip && pip install pyTelegramBotAPI requests aiohttp",
+  "postStartCommand": "cd /workspaces/BGDDOS && python3 -m venv .venv && . .venv/bin/activate && python -m pip install --upgrade pip && pip install pyTelegramBotAPI requests aiohttp certifi",
   "customizations": {
     "vscode": {
       "settings": {
@@ -24,5 +24,5 @@ cat <<EOL > .devcontainer/devcontainer.json
 EOL
 
 git add .devcontainer/devcontainer.json
-git commit -m "Add postStartCommand to run Python script automatically"
+git commit -m "Fix devcontainer environment setup"
 git push origin main
